@@ -1,0 +1,36 @@
+# Repo gitleaks config — same rules as the global fallback
+# (~/.config/git/gitleaks.toml) so local hook and CI agree.
+
+title = "repo gitleaks"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "env-file-committed"
+description = "Raw .env file (or backup/variant) staged for commit"
+path = '''(^|/)\.env(\.(backup|bak|old|orig|save|local|prod|production|dev|development|staging))?$'''
+
+[[rules]]
+id = "password-or-credential-file"
+description = "File name indicates stored password/credential material"
+path = '''(?i)(^|/)[^/]*(password|passwd|credential)[^/]*\.(txt|json|ya?ml|env|cfg|ini)$'''
+
+[[rules]]
+id = "private-key-file"
+description = "Private key or keystore file staged for commit"
+path = '''(^|/)(id_rsa|id_ed25519|id_ecdsa)[^/]*$|\.(pem|p12|pfx|key)$'''
+
+[[rules]]
+id = "dotfile-secret-token"
+description = "Hidden standalone secret/token file"
+path = '''(^|/)\.[^/]*(secret|token)[^/]*$'''
+
+[allowlist]
+description = "Legitimate non-secret files matching the patterns above"
+paths = [
+  '''(?i)\.(example|sample|template|dist)$''',
+  '''(^|/)\.env\.example[^/]*$''',
+  '''(^|/)[^/]*\.pub$''',
+  '''(^|/)package(-lock)?\.json$''',
+]

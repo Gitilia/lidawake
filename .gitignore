@@ -1,0 +1,55 @@
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# --- Secrets & env (real values never in git) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*password*
+*credential*
+!*example*
+
+# --- Real data (commit *.example.* fixtures instead) ---
+data/*.json
+data/*.yml
+data/*.yaml
+!data/*.example.*
+*.local.yml
+*.local.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Node ---
+node_modules/
+dist/
+coverage/
+npm-debug.log*
+
+# --- Outputs / scratch ---
+out/
+tmp/
+.tmp/
+scratch/
+*.log
+/lidawake
+
+# --- Agent tooling (local, not for the repo) ---
+.cursor/
+.claude/
+.codex/
+.agents/
+.opencode/
