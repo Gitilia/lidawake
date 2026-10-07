@@ -2,6 +2,8 @@
 
 Short orientation for Cursor agents.
 
+This repo is a free MIT command-line tool. Do not add a menu-bar app, a paid license, or an App Store target.
+
 ## Defaults
 
 - `make test` builds with warnings as errors and runs `scripts/test.sh`.

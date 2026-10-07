@@ -185,10 +185,10 @@ private func commandOn() {
     fputs(
         """
         lidawake: clamshell override on
-        Mac stays awake with the lid closed.
-        Leave it on a hard surface with airflow. A closed lid still makes heat.
-        Ctrl-C, or `lidawake off`, restores normal sleep.
-        A force-quit leaves the override on until reboot or `lidawake off`.
+        The Mac stays awake with the lid closed.
+        Ctrl-C, or `lidawake off` in another terminal, turns normal sleep back on.
+        kill -9 does not. Run `lidawake off` if that happens, or reboot.
+        Leave the Mac on a desk. A closed lid gets hot, so do not put it in a bag.
 
         """,
         stderr
