@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# Linux lidawake. Holds a logind lid lock until this process exits.
+set -euo pipefail
+
+pid_file="${LIDAWAKE_PID_FILE:-/tmp/lidawake.pid}"
+
+fail() {
+  printf 'lidawake: %s\n' "$1" >&2
+  exit 1
+}
+
+running_pid() {
+  local pid
+  [[ -f "$pid_file" ]] || return 1
+  pid="$(tr -d '[:space:]' <"$pid_file")"
+  if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
+    rm -f "$pid_file"
+    return 1
+  fi
+  if kill -0 "$pid" 2>/dev/null; then
+    printf '%s\n' "$pid"
+    return 0
+  fi
+  rm -f "$pid_file"
+  return 1
+}
+
+cmd_status() {
+  local pid
+  if pid="$(running_pid)"; then
+    printf 'running %s\n' "$pid"
+  else
+    printf 'stopped\n'
+  fi
+}
+
+cmd_off() {
+  local pid
+  if pid="$(running_pid)"; then
+    kill -TERM "$pid" 2>/dev/null || true
+    local _
+    for _ in $(seq 1 50); do
+      kill -0 "$pid" 2>/dev/null || break
+      sleep 0.1
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -KILL "$pid" 2>/dev/null || true
+    fi
+  fi
+  rm -f "$pid_file"
+  printf 'lidawake: lid sleep is on\n' >&2
+}
+
+in_gnome() {
+  local desk="${XDG_CURRENT_DESKTOP:-}:${XDG_SESSION_DESKTOP:-}:${DESKTOP_SESSION:-}"
+  [[ "$desk" == *[Gg][Nn][Oo][Mm][Ee]* ]]
+}
+
+cmd_on() {
+  local pid
+  if pid="$(running_pid)"; then
+    fail "already running (pid ${pid}). Stop it with: lidawake off"
+  fi
+  command -v systemd-inhibit >/dev/null 2>&1 || fail "systemd-inhibit is not installed"
+
+  printf '%s\n' "$$" >"$pid_file"
+
+  local child="" restored=0
+  cleanup() {
+    trap - EXIT INT TERM
+    if [[ "$restored" -eq 0 ]]; then
+      restored=1
+      printf 'lidawake: normal lid sleep restored\n' >&2
+    fi
+    rm -f "$pid_file"
+    if [[ -n "$child" ]] && kill -0 "$child" 2>/dev/null; then
+      kill -TERM "$child" 2>/dev/null || true
+      wait "$child" 2>/dev/null || true
+    fi
+  }
+  trap cleanup EXIT INT TERM
+
+  cat >&2 <<'EOF'
+lidawake: lid override on
+The machine stays awake with the lid closed.
+Ctrl-C, or `lidawake off` in another terminal, turns normal sleep back on.
+The lock ends when this process ends.
+Leave the laptop on a desk. A closed lid gets hot, so do not put it in a bag.
+EOF
+
+  if in_gnome && command -v gnome-session-inhibit >/dev/null 2>&1; then
+    systemd-inhibit \
+      --what=handle-lid-switch:idle \
+      --who=lidawake \
+      --why="Keep the machine awake with the lid closed" \
+      --mode=block \
+      gnome-session-inhibit \
+      --app-id lidawake \
+      --reason "Keep the machine awake with the lid closed" \
+      --inhibit suspend \
+      --inhibit idle \
+      sleep infinity &
+  else
+    systemd-inhibit \
+      --what=handle-lid-switch:idle \
+      --who=lidawake \
+      --why="Keep the machine awake with the lid closed" \
+      --mode=block \
+      sleep infinity &
+  fi
+  child=$!
+
+  set +e
+  wait "$child"
+  local code=$?
+  set -e
+  if [[ "$code" -ne 0 && "$code" -ne 130 && "$code" -ne 143 ]]; then
+    printf 'lidawake: could not hold the lid lock (systemd-inhibit exited %s)\n' "$code" >&2
+    exit 1
+  fi
+}
+
+case "${1:-on}" in
+  on) cmd_on ;;
+  off) cmd_off ;;
+  status) cmd_status ;;
+  *)
+    printf 'usage: lidawake [on|off|status]\n' >&2
+    exit 2
+    ;;
+esac
