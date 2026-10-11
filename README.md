@@ -1,6 +1,6 @@
 # lidawake
 
-`lidawake` keeps a laptop awake after you close the lid. Whatever was already running keeps running, including a compile or a local agent. The screen turns off.
+`lidawake` keeps a laptop awake after you close the lid. Whatever was already running keeps running, including a compile or a local agent. On a Mac it also turns the display off while the lid is closed, so the panel does not heat the closed lid.
 
 It is free and MIT licensed. This repository is the command-line tool. There is no separate app. The commands are the same on macOS and Linux: `lidawake on`, `lidawake off`, `lidawake status`.
 
@@ -68,9 +68,9 @@ It calls IOKit on `IOPMrootDomain` (`kPMSetClamshellSleepState`, selector 12) so
 
 It also holds a `PreventUserIdleSystemSleep` assertion named `lidawake`, so the Mac does not idle-sleep after the built-in display turns off.
 
-Every two seconds it sets the lid flag again. On Apple silicon, plugging or unplugging power can clear the flag.
+Once a second it sets the lid flag again, because plugging or unplugging power can clear it on Apple silicon, and it reads the lid sensor (`AppleClamshellState`). When the lid closes, it runs `pmset displaysleepnow`, which turns the panel off while the Mac stays awake. When the lid opens, it declares user activity so the display comes back. The sensor only reports open or closed, not an angle.
 
-Ctrl-C and `lidawake off` clear it. `kill -9` does not. If that happens, run `lidawake off`, or reboot.
+Ctrl-C and `lidawake off` clear the lid flag. `kill -9` does not. If that happens, run `lidawake off`, or reboot.
 
 `caffeinate` does not stop sleep when the lid closes. If the Mac is on power with an external display and a keyboard, macOS closed-display mode already does this.
 
@@ -88,7 +88,7 @@ A desktop that does not use logind or GNOME for the lid will not honor the lock.
 
 A very low battery, or the machine overheating, can still force sleep.
 
-Leave the laptop on a hard surface. A closed lid traps heat. Do not put it in a bag while this is running.
+Leave the laptop on a hard surface. The CPU still makes heat under a closed lid, even with the display off. Do not put it in a bag while this is running.
 
 ## Tests
 
@@ -96,7 +96,7 @@ Leave the laptop on a hard surface. A closed lid traps heat. Do not put it in a 
 make test
 ```
 
-On a Mac this builds the Swift command, checks the power assertion, and runs the Linux script against a stand-in for `systemd-inhibit`. On Linux it runs the script tests, and one real logind lock when the session is allowed to take one.
+On a Mac this builds the Swift command, checks the power assertion, drives a fake lid through close and open, and runs the Linux script against a stand-in for `systemd-inhibit`. On Linux it runs the script tests, and one real logind lock when the session is allowed to take one.
 
 ## License
 

@@ -9,6 +9,8 @@ This repo is a free MIT command-line tool. Do not add a menu-bar app, a paid lic
 - On macOS, `make test` builds with warnings as errors, runs `scripts/test.sh`, then runs `scripts/test-linux.sh`.
 - On Linux, `make test` runs `scripts/test-linux.sh` only. `scripts/lidawake` is the command. It does not compile.
 - The macOS test toggles lid sleep on this Mac and must restore it before exiting. `lidawake off` clears a sticky macOS override. The Linux lock ends when the process ends.
+- Test hooks in `main.swift`: `LIDAWAKE_LID_STATE_FILE` reads the lid state from a file (`open` or `closed`), and `LIDAWAKE_NO_DISPLAY_SLEEP` logs display changes instead of making them. Use both together so a test never blanks the screen.
+- The macOS test checks assertions by its own pid. A `lidawake on` session from the user's terminal may be running at the same time; do not kill it.
 - No secrets. Do not commit a pid file or the macOS build output (the `lidawake` binary at the repo root is gitignored; the source is `main.swift`).
 
 ## Docs

@@ -45,9 +45,10 @@ for _ in $(seq 1 50); do
 done
 [[ "$ready" -eq 1 ]]
 
+# Match this test's process only. A user session elsewhere may hold one too.
 asserted=0
 for _ in $(seq 1 50); do
-  if pmset -g assertions | grep -F 'named: "lidawake"' >/tmp/lidawake-assert.txt; then
+  if pmset -g assertions | grep -F "pid $holder(lidawake)" | grep -F 'named: "lidawake"' >/tmp/lidawake-assert.txt; then
     asserted=1
     break
   fi
@@ -67,7 +68,7 @@ echo "off releases the assertion and the pid"
 "$BIN" off >/tmp/lidawake-off.log
 grep -q "normal lid sleep restored" /tmp/lidawake-on.log
 [[ "$("$BIN" status)" == "stopped" ]]
-if pmset -g assertions | grep -F 'named: "lidawake"' >/dev/null; then
+if pmset -g assertions | grep -F "pid $holder(lidawake)" >/dev/null; then
   echo "assertion still held after off" >&2
   exit 1
 fi
@@ -77,5 +78,47 @@ if kill -0 "$holder" 2>/dev/null; then
   echo "holder pid $holder still alive" >&2
   exit 1
 fi
+
+echo "lid close turns the display off, lid open turns it on"
+lidfile="$(mktemp "${TMPDIR:-/tmp}/lidawake-lid.XXXXXX")"
+echo open >"$lidfile"
+LIDAWAKE_LID_STATE_FILE="$lidfile" LIDAWAKE_NO_DISPLAY_SLEEP=1 \
+  "$BIN" on >/tmp/lidawake-lid.log 2>&1 &
+lid_holder=$!
+ready=0
+for _ in $(seq 1 50); do
+  if [[ "$("$BIN" status)" == "running $lid_holder" ]]; then
+    ready=1
+    break
+  fi
+  sleep 0.1
+done
+[[ "$ready" -eq 1 ]]
+
+echo closed >"$lidfile"
+seen=0
+for _ in $(seq 1 40); do
+  if grep -q "lid closed, display off" /tmp/lidawake-lid.log; then
+    seen=1
+    break
+  fi
+  sleep 0.1
+done
+[[ "$seen" -eq 1 ]]
+
+echo open >"$lidfile"
+seen=0
+for _ in $(seq 1 40); do
+  if grep -q "lid open, display on" /tmp/lidawake-lid.log; then
+    seen=1
+    break
+  fi
+  sleep 0.1
+done
+[[ "$seen" -eq 1 ]]
+
+"$BIN" off >/dev/null
+rm -f "$lidfile"
+[[ "$("$BIN" status)" == "stopped" ]]
 
 echo "ok"
