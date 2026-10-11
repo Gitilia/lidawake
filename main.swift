@@ -15,12 +15,83 @@ private let pidFile: String = {
     return env
 }()
 
+/// Test hook. When set, the lid state is read from this file ("closed" or "open")
+/// instead of IOKit, so the open/close path can run without touching the lid.
+private let lidStateFile = ProcessInfo.processInfo.environment["LIDAWAKE_LID_STATE_FILE"] ?? ""
+
+/// Test hook. When set, log display changes instead of making them.
+private let skipDisplayChanges = !(ProcessInfo.processInfo.environment["LIDAWAKE_NO_DISPLAY_SLEEP"] ?? "").isEmpty
+
 private var pmConnection: io_connect_t = 0
 private var assertionID: IOPMAssertionID = 0
 
 private func fail(_ message: String) -> Never {
     fputs("lidawake: \(message)\n", stderr)
     exit(1)
+}
+
+/// `AppleClamshellState` on IOPMrootDomain. True when the lid sensor says closed.
+/// nil when the state cannot be read (desktop Mac, or a missing test file).
+private func lidClosed() -> Bool? {
+    if !lidStateFile.isEmpty {
+        guard let text = try? String(contentsOfFile: lidStateFile, encoding: .utf8) else {
+            return nil
+        }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines) == "closed"
+    }
+    let service = IOServiceGetMatchingService(
+        kIOMainPortDefault,
+        IOServiceMatching("IOPMrootDomain")
+    )
+    guard service != IO_OBJECT_NULL else {
+        return nil
+    }
+    defer { IOObjectRelease(service) }
+    guard let raw = IORegistryEntryCreateCFProperty(
+        service,
+        "AppleClamshellState" as CFString,
+        kCFAllocatorDefault,
+        0
+    ) else {
+        return nil
+    }
+    return (raw.takeRetainedValue() as? Bool) ?? false
+}
+
+/// Same request `pmset displaysleepnow` makes. The panel turns off; the system
+/// stays awake because of the idle assertion.
+private func displayOff() {
+    if skipDisplayChanges {
+        return
+    }
+    let pmset = Process()
+    pmset.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+    pmset.arguments = ["displaysleepnow"]
+    pmset.standardOutput = FileHandle.nullDevice
+    pmset.standardError = FileHandle.standardError
+    do {
+        try pmset.run()
+        pmset.waitUntilExit()
+    } catch {
+        fputs("lidawake: could not run pmset displaysleepnow: \(error.localizedDescription)\n", stderr)
+    }
+}
+
+/// Declaring user activity wakes the display. macOS also does this on lid open;
+/// calling it here covers the cases where it does not.
+private func displayOn() {
+    if skipDisplayChanges {
+        return
+    }
+    var id: IOPMAssertionID = 0
+    let status = IOPMAssertionDeclareUserActivity(
+        "lidawake lid open" as CFString,
+        kIOPMUserActiveLocal,
+        &id
+    )
+    if status == kIOReturnSuccess, id != 0 {
+        IOPMAssertionRelease(id)
+    }
 }
 
 private func setClamshellSleepDisabled(_ disabled: Bool) -> kern_return_t {
@@ -171,13 +242,34 @@ private func commandOn() {
     terminate.setEventHandler { restoreAndExit() }
     terminate.resume()
 
-    // Plugging or unplugging power can clear the bit. Re-apply while we run.
+    var lastLidClosed = lidClosed()
+    if lastLidClosed == nil {
+        fputs("lidawake: no lid sensor found; the display will stay as it is\n", stderr)
+    }
+
+    // Once a second: re-apply the lid flag (plugging or unplugging power can
+    // clear it) and react to the lid opening or closing.
     let timer = DispatchSource.makeTimerSource(queue: .main)
-    timer.schedule(deadline: .now() + 2, repeating: 2)
+    timer.schedule(deadline: .now() + 1, repeating: 1)
     timer.setEventHandler {
         let again = setClamshellSleepDisabled(true)
         if again != KERN_SUCCESS {
             fputs(String(format: "lidawake: re-apply failed: 0x%x\n", again), stderr)
+        }
+
+        guard let closed = lidClosed() else {
+            return
+        }
+        if closed == lastLidClosed {
+            return
+        }
+        lastLidClosed = closed
+        if closed {
+            fputs("lidawake: lid closed, display off\n", stderr)
+            displayOff()
+        } else {
+            fputs("lidawake: lid open, display on\n", stderr)
+            displayOn()
         }
     }
     timer.resume()
@@ -186,9 +278,10 @@ private func commandOn() {
         """
         lidawake: clamshell override on
         The Mac stays awake with the lid closed.
+        The display turns off when the lid closes and comes back when it opens.
         Ctrl-C, or `lidawake off` in another terminal, turns normal sleep back on.
         kill -9 does not. Run `lidawake off` if that happens, or reboot.
-        Leave the Mac on a desk. A closed lid gets hot, so do not put it in a bag.
+        Leave the Mac on a desk. A closed lid still gets warm, so do not put it in a bag.
 
         """,
         stderr
